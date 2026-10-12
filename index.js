@@ -359,15 +359,29 @@ async function tick() {
 }
 
 const server = http.createServer((req, res) => {
-  if (req.url === '/health' || req.url === '/') {
+  const path = (req.url || '/').split('?')[0];
+  if (path === '/health' || path === '/') {
+    const info = cycleInfo();
     res.writeHead(200, { 'Content-Type': 'application/json' });
     res.end(
       JSON.stringify({
         ok: true,
         accounts: loadAccounts().length,
-        ...cycleInfo(),
+        ...info,
       })
     );
+    // Every ping runs a tick so cron-job.org can trigger joins after free-tier wakeups
+    void tick();
+    return;
+  }
+  if (path === '/tick') {
+    void tick().then(() => {
+      res.writeHead(200, { 'Content-Type': 'application/json' });
+      res.end(JSON.stringify({ ok: true, ...cycleInfo() }));
+    }).catch((e) => {
+      res.writeHead(500, { 'Content-Type': 'application/json' });
+      res.end(JSON.stringify({ ok: false, error: String(e && e.message || e) }));
+    });
     return;
   }
   res.writeHead(404);
@@ -378,5 +392,5 @@ server.listen(PORT, () => {
   log(`listening on ${PORT}`);
   log(`accounts loaded: ${loadAccounts().length}`);
   tick();
-  setInterval(tick, 60 * 1000);
+  setInterval(tick, 30 * 1000);
 });
